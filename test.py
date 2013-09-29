@@ -123,7 +123,8 @@ class Ledger:
         if 'refs/heads/master' in self.repo.refs:
             parent = self.repo.refs['refs/heads/master']
         
-        str_to_sign = "%s:%s:%s" % (parent, t.sha().hexdigest(), actions)
+        ctime = int(time.time())
+        str_to_sign = "%d:%s:%s:%s" % (ctime, parent, t.sha().hexdigest(), str(self.current_user))
         sig = ase.sign(str_to_sign)
 
         message = "Actions: %s\nSig: %s" % (actions, sig)
@@ -133,7 +134,7 @@ class Ledger:
         commit.author = commit.committer = repr(self.current_user)
         tzo = int(tzlocal().utcoffset(datetime.datetime.now()).total_seconds())
         commit.commit_timezone = commit.author_timezone = tzo
-        commit.commit_time = commit.author_time = int(time.time())
+        commit.commit_time = commit.author_time = ctime
         commit.encoding = "UTF-8"
         commit.message = message
 
