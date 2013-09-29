@@ -1,2 +1,3 @@
 test-ledger/*
 *.sw[op]
+*.pyc

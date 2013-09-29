@@ -26,8 +26,6 @@ from crypto.symenc import SymEnc
 parser = argparse.ArgumentParser(description='Process the ledger')
 parser.add_argument('--ledger', '-l', metavar="DIR", type=str,
                    help='Path to the ledger', required=True)
-parser.add_argument('--add-user', "-a", metavar="USER_NAME", type=str,
-                   help='Adds a user')
 parser.add_argument('--user', "-u", metavar="USER_NAME", type=str,
                    help='Acts as user')
 parser.add_argument('command', type=str, help='command')
@@ -201,7 +199,7 @@ if args.command == 'init':
     ledger = Ledger.init(args.ledger, user)
     
 else:
-    if args.command == 'add_user':
+    if args.command == 'add-user':
         if 2 > len(args.command_args):
             raise Exception("Must specifiy a user when initializing")
 

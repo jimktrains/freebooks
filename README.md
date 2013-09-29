@@ -12,3 +12,14 @@ Basic Ideas
 
 This should prevent any one person from rewriting any commit including and before the last commit not done by them.
 
+*NOTE:* Passwords are mimiced at the moment because I got tired of typing the same dummy password in all the time. They can be enabled by removing the first return in the SymEncPasswordKey.get_password function
+Example
+-------
+
+To initialize a ledger:
+
+    python freebooks.py -l test-ledger init jim "Jim K" jim@example.com
+
+To add a user:
+
+    python freebooks.py -l test-ledger -u jim add-user you "You There" you@example.com
