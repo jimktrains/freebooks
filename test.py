@@ -1,149 +1,122 @@
-from fs.zipfs import ZipFS
-from Crypto import Random
-from Crypto.Protocol.KDF import PBKDF2
-from Crypto.Cipher import AES
-from Crypto.Hash import HMAC
-from Crypto.Hash import SHA256
-
-import base64
-
-import uuid 
-import time
-import math
-import binascii
-import getpass
+from dulwich.repo import *
+from dulwich.objects import *
 import yaml
 import os
-from pyecc import ECC
+import argparse
+import math
+import shutil
+import time
+
+# Man is this ugly
+from crypto.asymencdata import ASymEncData
+from crypto.asymenc import ASymEnc
+from crypto.asymkey import ASymKey
+from crypto.encresult import EncResult
+from crypto.symencdata import SymEncData
+from crypto.symenckey import SymEncKey
+from crypto.symencpasswordkey import SymEncPasswordKey
+from crypto.symenc import SymEnc
 
 
-BLOCK_SIZE = 32
 
-BS = BLOCK_SIZE
-pad = lambda s: s + (BS - len(s) % BS) * chr(BS - len(s) % BS) 
-unpad = lambda s : s[0:-ord(s[-1])]
 
-def gen_iv():
-    # Version 1 is based on:
-    #  * Counter
-    #  * Time
-    #  * MAC Address
-    # Shouldn't repeat, even across machines
-    # and under most normal conditions
-    uuid1 = str(uuid.uuid1()).replace('-','')
-    iv = binascii.unhexlify(uuid1)
-    return iv
+parser = argparse.ArgumentParser(description='Process the ledger')
+parser.add_argument('--ledger', '-l', metavar="DIR", type=str,
+                   help='Path to the ledger', required=True)
+parser.add_argument('--initialize', "-i", action='store_true',
+                   help='Initialize the ledger. Must be used with --add-user', 
+                   default=False)
+parser.add_argument('--add-user', "-a", metavar="USER_NAME", type=str,
+                   help='Adds a user')
+args = parser.parse_args()
 
-def encrypt(data,key):
-    enc_key = key[0]
-    hmac_key = key[1]
+print args
 
-    iv = gen_iv()
 
-    cipher = AES.new(enc_key, AES.MODE_CBC, iv)
-    enc_data = cipher.encrypt(pad(data))
-    
-    iv   = base64.b64encode(iv)
-    enc_data = base64.b64encode(enc_data)
+def add_user(username):
+    if not os.path.exists(args.ledger + '/users/'):
+        os.makedirs(args.ledger + '/users/')
+    if os.path.exists(args.ledger + '/users/' + args.add_user):
+        raise Exception("User %s exists. Cannot regenerate key" % username)
+    print "Generating User Key"
+    user_passwd = SymEncPasswordKey()
+    user_key = ASymKey()
 
-    key_combo = { "iv": iv, 
-                  "encrypted": enc_data,
-                  "algo": "AES",
-                  "mode": "CBC",
-                  "keylen": BLOCK_SIZE
-                }
-
-    h = HMAC.new(hmac_key, digestmod = SHA256)
-    serial = "%s:%s:%s:%s:%s" % ("AES", "CBC", BLOCK_SIZE, iv, enc_data)
-    h.update(serial)
-    hmac = base64.b64encode(h.digest())
-
-    hmac_combo = {
-                    "hmac": hmac,
-                    "algo": "SHA256"
-                 }
-
-    enc_yaml = {
-        "encrypted": key_combo,
-        "hmac": hmac_combo
+    to_store = {
+        'key_key': user_passwd.to_dict(),
+        'key': user_key.to_dict(user_passwd)
     }
+    user_key_yaml = yaml.dump(to_store, default_flow_style = False)
 
-    return enc_yaml
+    with open(args.ledger + '/users/' + args.add_user, 'w+') as key_file:
+        key_file.write(user_key_yaml)
+    return user_key
 
-def decrypt(enc, key):
-    enc_key = key[0]
-    hmac_key = key[1]
-
-    iv = enc['encrypted']['iv']
-    data = enc['encrypted']['encrypted']
-    serial = "%s:%s:%s:%s:%s" % ("AES", "CBC", BLOCK_SIZE, iv, data)
-
-    h = HMAC.new(hmac_key, digestmod = SHA256)
-    h.update(serial)
-    hmac = base64.b64encode(h.digest())
-
-    iv = base64.b64decode(enc['encrypted']['iv'])
-    # Why I don't have to pad is beyond me
-    data = base64.b64decode(enc['encrypted']['encrypted'])
-
-    if hmac == enc['hmac']['hmac']:
-        # So yeah....We're just going to assume it's AES-CBC
-        cipher = AES.new(enc_key, AES.MODE_CBC, iv) 
-        raw_data = unpad(cipher.decrypt(data))
-        return raw_data
-    else:
-        raise Exception("Bad Password")
-
-def password_to_key(enc_salt = None,
-                    hmac_salt = None, 
-                    max_len = 8, 
-                    confirm = False):
-    if enc_salt is None:
-        enc_salt = Random.get_random_bytes(32)
-    if hmac_salt is None:
-        hmac_salt = Random.get_random_bytes(32)
-
-    passwd = ''
-    cpasswd = '-'
-    while cpasswd != passwd:
-        while len(passwd) < max_len:
-            passwd = getpass.getpass("Please enter the password: ")
-        if confirm:
-            if len(passwd) < max_len:
-                print "Password needs to be at least %d characters" % max_len
-                cpasswd = passwd + "BAD"
-            else:
-                cpasswd = getpass.getpass("Please confirm the password: ")
-                if passwd != cpasswd:
-                    print "Passwords do not match"
-        else:
-            cpasswd = passwd
-
-    enc_key = PBKDF2(passwd, enc_salt, BLOCK_SIZE)
-    hmac_key = PBKDF2(passwd, hmac_salt, BLOCK_SIZE)
-
-    return ((enc_key, hmac_key), (enc_salt, hmac_salt))
-
-raw_key = None
-
-if not os.path.exists('key'): 
-
+def create_master_key():
+    if os.path.exists(args.ledger + '/key'):
+        raise Exception('key exists. Cannot regenerate key')
     print "Generating key"
-    key_key, passwd_salt  = password_to_key(confirm = True)
-    raw_key = []
-    raw_key.append(base64.b64encode(Random.get_random_bytes(32)))
-    raw_key.append(base64.b64encode(Random.get_random_bytes(32)))
-    print raw_key
-    raw_key = ":".join(raw_key)
-    key = encrypt(raw_key, key_key)
-    key['password_salts'] = {
-        "key": base64.b64encode(passwd_salt[0]),
-        "hmac": base64.b64encode(passwd_salt[1])
-    }
-    key_yaml = yaml.dump( key, default_flow_style=False)
+    key_key = SymEncPasswordKey()
 
-    with open('key', 'w+') as key_file:
+    key = SymEncKey()
+
+    to_store = {
+        'key_key': key_key.to_dict(),
+        'key': key.to_dict(key_key)
+    }
+    key_yaml = yaml.dump(to_store, default_flow_style=False)
+    with open(args.ledger + '/key', 'w+') as key_file:
         key_file.write(key_yaml)
+
+def add_files_and_sign(repo, repo_base, files,username, user_key):
+    ase = ASymEnc(user_key)
+
+    object_store = repo.object_store
+
+    t = Tree()
+    for fn in files:
+        b = None
+        with open(repo_base + "/" + fn, 'r') as f:
+            b = Blob.from_string(f.read())
+        t.add(fn, 0100644, b.id)
+        object_store.add_object(b)
+    object_store.add_object(t)
+    sig = ase.sign(t.sha().hexdigest())
+
+    commit = Commit()
+    commit.tree = t.id
+    commit.author = commit.committer = username
+    commit.commit_time = commit.author_time = int(time.time())
+    tz = parse_timezone('-0400')[0] # Should be fixed
+    commit.commit_timezone = commit.author_timezone = tz
+    commit.encoding = "UTF-8"
+    commit.message = sig
+
+    object_store.add_object(commit)
+
+    repo.refs['refs/heads/master'] = commit.id
+
+if args.initialize:
+    if not args.add_user:
+        raise Exception("Must specifiy a user when initializing")
+
+    # FOR TESTING ONLY
+    # THIS WILL ERROR
+    if os.path.exists(args.ledger):
+        shutil.rmtree(args.ledger)
+
+    ledger_repo = Repo.init(args.ledger, mkdir=True)
+
+    create_master_key()
+    user_key = add_user(args.add_user)
+
+    add_files_and_sign(ledger_repo, args.ledger,
+            ['key', 'users/' + args.add_user], 
+            args.add_user, user_key)
+    #ledger_repo.do_commit("Init", committer=args.add_user)
+    #print ledger_repo.head()
+
+
 else:
     print "Reading key"
     enc_key = None
