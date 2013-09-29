@@ -1,2 +1,2 @@
-ledger
+test-ledger/*
 *.sw[op]

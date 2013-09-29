@@ -1,5 +1,7 @@
 from Crypto.Hash import SHA256
 from Crypto.Hash import HMAC
+from asymencdata import ASymEncData
+from symencdata import SymEncData
 import base64
 class EncResult:
     def __init__(self, enc_data, hmac_key):
@@ -27,5 +29,10 @@ class EncResult:
         }
 
     @staticmethod
-    def from_dict(pickle_key, state):
+    def from_dict(state):
+        # I don't like doing it like this
+        if 'iv' in state['data']:
+            state['data'] = SymEncData.from_dict(state['data'])
+        else:
+            state['data'] = ASymEncData.from_dict(state['data'])
         return EncResult(state['data'], state['hmac'])

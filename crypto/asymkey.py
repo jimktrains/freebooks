@@ -2,6 +2,7 @@ from pyecc import ECC
 from Crypto.Hash import SHA256
 import base64
 from symenc import SymEnc
+from encresult import EncResult
 class ASymKey:
     def __init__(self, key = None):
         if key is None:

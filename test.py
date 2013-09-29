@@ -6,6 +6,9 @@ import argparse
 import math
 import shutil
 import time
+import datetime
+from dateutil.tz import tzlocal
+
 
 # Man is this ugly
 from crypto.asymencdata import ASymEncData
@@ -23,21 +26,20 @@ from crypto.symenc import SymEnc
 parser = argparse.ArgumentParser(description='Process the ledger')
 parser.add_argument('--ledger', '-l', metavar="DIR", type=str,
                    help='Path to the ledger', required=True)
-parser.add_argument('--initialize', "-i", action='store_true',
-                   help='Initialize the ledger. Must be used with --add-user', 
-                   default=False)
 parser.add_argument('--add-user', "-a", metavar="USER_NAME", type=str,
                    help='Adds a user')
+parser.add_argument('--user', "-u", metavar="USER_NAME", type=str,
+                   help='Acts as user')
+parser.add_argument('command', type=str, help='command')
+parser.add_argument('command_args', type=str, nargs='*', help='command arguments')
 args = parser.parse_args()
-
-print args
-
 
 def add_user(username):
     if not os.path.exists(args.ledger + '/users/'):
         os.makedirs(args.ledger + '/users/')
-    if os.path.exists(args.ledger + '/users/' + args.add_user):
-        raise Exception("User %s exists. Cannot regenerate key" % username)
+    user_path = args.ledger + '/users/' + str(username)
+    if os.path.exists(user_path):
+        raise Exception("User %s exists. Cannot regenerate key" % str(username))
     print "Generating User Key"
     user_passwd = SymEncPasswordKey()
     user_key = ASymKey()
@@ -48,88 +50,166 @@ def add_user(username):
     }
     user_key_yaml = yaml.dump(to_store, default_flow_style = False)
 
-    with open(args.ledger + '/users/' + args.add_user, 'w+') as key_file:
+    with open(user_path, 'w+') as key_file:
         key_file.write(user_key_yaml)
     return user_key
 
-def create_master_key():
-    if os.path.exists(args.ledger + '/key'):
-        raise Exception('key exists. Cannot regenerate key')
-    print "Generating key"
-    key_key = SymEncPasswordKey()
 
-    key = SymEncKey()
 
-    to_store = {
-        'key_key': key_key.to_dict(),
-        'key': key.to_dict(key_key)
-    }
-    key_yaml = yaml.dump(to_store, default_flow_style=False)
-    with open(args.ledger + '/key', 'w+') as key_file:
-        key_file.write(key_yaml)
+class User:
+    def __init__(self, username, full_name, email):
+        self.username = username
+        self.full_name = full_name
+        self.email = email
+    def generate_key(self):
+        self.password = SymEncPasswordKey()
+        self.key = ASymKey()
+    def to_dict(self):
+        return {
+            'password': self.password.to_dict(),
+            'key': self.key.to_dict(self.password),
+            'username': self.username,
+            'full_name': self.full_name,
+            'email': self.email
+        }
+    @staticmethod
+    def from_dict_auth(state):
+        user = User(state['username'], state['full_name'], state['email'])
+        user.password = SymEncPasswordKey.from_dict(state['password'])
+        user.key = ASymKey.from_dict(user.password, state['key'])
+        return user 
+    def __str__(self):
+        return self.username
+    def __repr__(self):
+        return "%s <%s>" % (self.full_name, self.email)
 
-def add_files_and_sign(repo, repo_base, files,username, user_key):
-    ase = ASymEnc(user_key)
+class Ledger:
+    def __init__(self, path, user = None):
+        self.path = path
+        self.repo = Repo(path)
+        self.current_user = user
+        self.dirty_files = []
+        self.actions = []
 
-    object_store = repo.object_store
+    @staticmethod
+    def init(path, user):
+        Repo.init(path, mkdir=True)
+        user.generate_key()
+        ledger = Ledger(path, user)
+        ledger.actions.append('Init')
+        ledger.create_master_key()
+        ledger.add_user(user)
+        ledger.commit()
+        
+    def commit(self):
+        if self.current_user is None:
+            raise Exception('No User Logged in')
+        ase = ASymEnc(self.current_user.key)
 
-    t = Tree()
-    for fn in files:
-        b = None
-        with open(repo_base + "/" + fn, 'r') as f:
-            b = Blob.from_string(f.read())
-        t.add(fn, 0100644, b.id)
-        object_store.add_object(b)
-    object_store.add_object(t)
-    sig = ase.sign(t.sha().hexdigest())
+        object_store = self.repo.object_store
 
-    commit = Commit()
-    commit.tree = t.id
-    commit.author = commit.committer = username
-    commit.commit_time = commit.author_time = int(time.time())
-    tz = parse_timezone('-0400')[0] # Should be fixed
-    commit.commit_timezone = commit.author_timezone = tz
-    commit.encoding = "UTF-8"
-    commit.message = sig
+        t = Tree()
+        for fn in self.dirty_files:
+            b = None
+            with open(self.path + "/" + fn, 'r') as f:
+                b = Blob.from_string(f.read())
+            t.add(fn, 0100644, b.id)
+            object_store.add_object(b)
+        object_store.add_object(t)
 
-    object_store.add_object(commit)
+        actions = ". ".join(self.actions)
 
-    repo.refs['refs/heads/master'] = commit.id
+        parent = None
+        if 'refs/heads/master' in self.repo.refs:
+            parent = self.repo.refs['refs/heads/master']
+        
+        str_to_sign = "%s:%s:%s" % (parent, t.sha().hexdigest(), actions)
+        sig = ase.sign(str_to_sign)
 
-if args.initialize:
-    if not args.add_user:
+        message = "Actions: %s\nSig: %s" % (actions, sig)
+
+        commit = Commit()
+        commit.tree = t.id
+        commit.author = commit.committer = repr(self.current_user)
+        tzo = int(tzlocal().utcoffset(datetime.datetime.now()).total_seconds())
+        commit.commit_timezone = commit.author_timezone = tzo
+        commit.commit_time = commit.author_time = int(time.time())
+        commit.encoding = "UTF-8"
+        commit.message = message
+
+        if parent:
+            commit.parents = [parent]
+
+        object_store.add_object(commit)
+
+        self.repo.refs['refs/heads/master'] = commit.id
+
+        self.dirty_files = []
+        self.actions = []
+
+    def add_user(self, user):
+        if not os.path.exists(self.path + '/users/'):
+            os.makedirs(self.path + '/users/')
+        user_path = self.path + '/users/' + str(user)
+        if os.path.exists(user_path):
+            raise Exception("User %s exists. Cannot regenerate key" % str(user))
+        user_key_yaml = yaml.dump(user.to_dict(), default_flow_style = False)
+
+        with open(user_path, 'w+') as key_file:
+            key_file.write(user_key_yaml)
+            self.dirty_files.append('users/' + str(user))
+        self.actions.append("Create user %s" % user)
+
+    def create_master_key(self):
+        if os.path.exists(self.path + '/key'):
+            raise Exception('key exists. Cannot regenerate key')
+        print "Generating key"
+        key_key = SymEncPasswordKey()
+
+        key = SymEncKey()
+
+        to_store = {
+            'key_key': key_key.to_dict(),
+            'key': key.to_dict(key_key)
+        }
+        key_yaml = yaml.dump(to_store, default_flow_style=False)
+        with open(self.path + '/key', 'w+') as key_file:
+            key_file.write(key_yaml)
+            self.dirty_files.append('key')
+        self.actions.append("Generated Master Key")
+    def auth_user(self, username):
+        if not os.path.exists(self.path + "/users/" + username):
+            raise Exception("%s doesn't exist" % username)
+        with open(self.path + "/users/" + username, 'r') as f:
+            user_dict = yaml.safe_load(f.read())
+        user = User.from_dict_auth(user_dict)
+        self.current_user = user
+
+        
+
+if args.command == 'init':
+
+    if 3 > len(args.command_args):
         raise Exception("Must specifiy a user when initializing")
-
+    user = User(args.command_args[0], args.command_args[1], args.command_args[2])
     # FOR TESTING ONLY
     # THIS WILL ERROR
     if os.path.exists(args.ledger):
         shutil.rmtree(args.ledger)
 
-    ledger_repo = Repo.init(args.ledger, mkdir=True)
-
-    create_master_key()
-    user_key = add_user(args.add_user)
-
-    add_files_and_sign(ledger_repo, args.ledger,
-            ['key', 'users/' + args.add_user], 
-            args.add_user, user_key)
-    #ledger_repo.do_commit("Init", committer=args.add_user)
-    #print ledger_repo.head()
-
-
+    ledger = Ledger.init(args.ledger, user)
+    
 else:
-    print "Reading key"
-    enc_key = None
-    with open('key', 'r') as key_file:
-        enc_key = key_file.read()
-    enc_key = yaml.load(enc_key)
+    if args.command == 'add_user':
+        if 2 > len(args.command_args):
+            raise Exception("Must specifiy a user when initializing")
 
-    password_salt = enc_key['password_salts']
-    enc_salt = base64.b64decode(password_salt['key'])
-    hmac_salt = base64.b64decode(password_salt['hmac'])
-    key_key, passwd_salt = password_to_key(enc_salt=enc_salt, 
-                                           hmac_salt=hmac_salt)
+        ledger = Ledger(args.ledger)
+        ledger.auth_user(args.user)
 
-    raw_key = decrypt(enc_key, key_key).split(':')
-    raw_key[0] = base64.b64decode(raw_key[0])
-    raw_key[1] = base64.b64decode(raw_key[1])
+        user_to_add = User(
+            args.command_args[0], args.command_args[1], args.command_args[2])
+        user_to_add.generate_key()
+        ledger.add_user(user_to_add)
+
+        ledger.commit()
