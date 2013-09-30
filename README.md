@@ -10,6 +10,7 @@ Basic Ideas
 * user key - Random ECC key stored for each user. Private key encrypted with user password. Used to sign commits.
 * commit signature - Each time a commit happens, 4 pieces of information as signed: 1) the sha for the tree of all added or modified files. 2) the unix timestamp. 3) username, 4) parent commit's sha
 * all users are trusted - If someone has the ledger password and a key-pair it is assumed that they will not act maliciously. However, valid clients will never accept a forced commit and will not work on an in-valid repository
+* clocks will be assumed to be correct - Most uses of this won't need split-second precisions and will normally have lots of human error as well (the time it takes to enter the tx from the time it was made).  Thus, I'm making the assumption that I can order tx by their commit time, which should be more than enough from most, if not all, cases.
 
 This should prevent any one person from rewriting any commit including and before the last commit not done by them.
 

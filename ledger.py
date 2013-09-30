@@ -159,7 +159,7 @@ class Ledger:
         # 3870ed38-29e1-11e3-be97-001de0794fc3
         dir_path =  "tx/" + id_parts[4] + "/" + id_parts[3] + \
                     "/" + id_parts[2]
-        file_name = id_parts[1] + "-" + id_parts[2]
+        file_name = id_parts[1] + "-" + id_parts[0]
         return dir_path + "/" + file_name, dir_path
     def create_tx(self, from_account, to_account, description, amount):
         self.check_key()
@@ -224,3 +224,7 @@ class Ledger:
             accts[from_account] -= amount
             accts[to_account] += amount
         return accts
+
+    def verify(self):
+        for rev in self.repo.get_walker():
+            print rev
