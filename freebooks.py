@@ -28,8 +28,8 @@ if args.command == 'init':
     
 else:
     ledger = Ledger(args.ledger)
-    ledger.verify()
-    exit()
+    #ledger.verify()
+    #exit()
     ledger.auth_user(args.user)
     ledger.load_key()
     if args.command == 'add-user':
