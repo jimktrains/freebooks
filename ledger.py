@@ -9,6 +9,7 @@ import datetime
 from dateutil.tz import tzlocal
 import uuid
 from user import User
+import hashlib
 
 # Man is this ugly
 from crypto.asymencdata import ASymEncData
@@ -19,6 +20,10 @@ from crypto.symencdata import SymEncData
 from crypto.symenckey import SymEncKey
 from crypto.symencpasswordkey import SymEncPasswordKey
 from crypto.symenc import SymEnc
+
+class LedgerException(Exception):
+    pass
+
 class Ledger:
     def __init__(self, path, user = None):
         self.path = path
@@ -27,6 +32,7 @@ class Ledger:
         self.dirty_files = []
         self.actions = []
         self.key = None
+        self.cached_users = None
 
     def __enter__(self):
         self.load_all_users()
@@ -34,12 +40,11 @@ class Ledger:
             self.auth_user(self.current_user)
         errs = self.errors()
         if errs:
-            raise Exception(errs)
+            raise LedgerException(errs)
         self.load_key()
         return self
     def __exit__(self, type, value, traceback):
         if value is None:
-            self.commit()
             return True
         return False
     @staticmethod
@@ -50,98 +55,85 @@ class Ledger:
         ledger.actions.append('Init')
         ledger.create_master_key()
         ledger.add_user(user)
-        ledger.init_tx_dir()
-        ledger.commit()
         
-    def commit(self):
+
+    @staticmethod
+    def str_to_sign(ctime, parent, digest, actions, user):
+        if isinstance(parent, list):
+            parent = ",".join(parent)
+        action_digest =  hashlib.sha256(actions).hexdigest()
+        return "%d:%s:%s:%s:%s" % (ctime, parent, digest, action_digest, user)
+    def commit(self, branch, actions, data=None):
         if self.current_user is None:
-            raise Exception('No User Logged in')
-        if 0 == len(self.dirty_files):
-            return None;
-        files = self.list_files()
+            raise LedgerException('No User Logged in')
+        branch = "refs/heads/%s" % branch
+        parent = ''
+        if branch in self.repo.refs:
+            parent = [self.repo.refs[branch]]
 
-        object_store = self.repo.object_store
-
-        t = Tree()
-        for fn in files:
-            b = None
-            with open(fn, 'r') as f:
-                b = Blob.from_string(f.read())
-            t.add(fn, 0100644, b.id)
-            object_store.add_object(b)
-        object_store.add_object(t)
-
-        actions = ". ".join(self.actions)
-
-        parent = None
-        if 'refs/heads/master' in self.repo.refs:
-            parent = self.repo.refs['refs/heads/master']
-        
+        digest = hashlib.sha256(data).hexdigest()
         ctime = int(time.time())
-        str_to_sign = "%d:%s:%s:%s" % (ctime, parent, t.sha().hexdigest(), str(self.current_user))
-        ase = ASymEnc(self.current_user.key)
-        sig = ase.sign(str_to_sign)
+        if isinstance(actions, list):
+            actions = ". ".join(actions)
 
-        message = "Actions: %s\nSig: %s" % (actions, sig)
+        s2s = Ledger.str_to_sign(ctime = ctime, 
+                                 parent = parent, 
+                                 digest = digest, 
+                                 actions = actions,
+                                 user = repr(self.current_user))
+        ase = ASymEnc(self.current_user.key)
+        sig = ase.sign(s2s)
+        if not ase.verify(s2s, sig):
+            raise Exception('Bah!')
+        
+        msg = "Actions: %s\nSig: %s\n%s" % (actions, sig, data)
 
         commit = Commit()
-        commit.tree = t.id
         commit.author = commit.committer = repr(self.current_user)
         tzo = int(tzlocal().utcoffset(datetime.datetime.now()).total_seconds())
         commit.commit_timezone = commit.author_timezone = tzo
         commit.commit_time = commit.author_time = ctime
         commit.encoding = "UTF-8"
-        commit.message = message
+        commit.message = msg
+        # SHA of an empty tree
+        # git hash-object -t tree /dev/null
+        commit.tree = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 
         if parent:
-            commit.parents = [parent]
+            commit.parents = parent
 
+        object_store = self.repo.object_store
         object_store.add_object(commit)
 
-        self.repo.refs['refs/heads/master'] = commit.id
-
-        self.dirty_files = []
-        self.actions = []
+        self.repo.refs[branch] = commit.id
 
     def load_key(self):
-        key = None
-        with open(self.path + '/key', 'r') as key_file: 
-            key = yaml.safe_load(key_file.read())
-        key_key = key['key_key']
-        key_key = SymEncPasswordKey.from_dict(key_key)
-        key = key['key']
-        key = SymEncKey.from_dict(key_key, key)
-        self.key = key
+        for key in self.keys():
+            key_key = key['key_key']
+            key_key = SymEncPasswordKey.from_dict(key_key)
+            key = key['key']
+            key = SymEncKey.from_dict(key_key, key)
+            self.key = key
+            break # There should only be a single key, or we'll just use the first one
 
     def check_key(self):
         if self.key is None:
-            raise Exception("Key not loaded")
+            self.load_key()
+            if self.key is None:
+                raise LedgerException("Key not loaded")
 
-    def init_tx_dir(self):
-        if not os.path.exists(self.path + '/tx/'):
-            os.makedirs(self.path + '/tx/')
-        with open(self.path + '/tx/.placeholder', 'w') as f:
-            f.write('');
-        self.dirty_files.append('tx/.placeholder')
-        self.actions.append('Create Tx dir')
+    def auth_user(self, username):
+        if username not in self.cached_users:
+            raise LedgerException("User %s doesn't exist" % username)
+        user = self.cached_users[username]
+        user.decrypt_key()
+        self.current_user = user
 
     def add_user(self, user):
-        if not os.path.exists(self.path + '/users/'):
-            os.makedirs(self.path + '/users/')
-        user_path = self.path + '/users/' + str(user)
-        if os.path.exists(user_path):
-            raise Exception("User %s exists. Cannot regenerate key" % str(user))
         user_key_yaml = yaml.dump(user.to_dict(), default_flow_style = False)
-
-        with open(user_path, 'w+') as key_file:
-            key_file.write(user_key_yaml)
-            self.dirty_files.append('users/' + str(user))
-        self.actions.append("Create user %s" % user)
+        self.commit('users', "Create user %s" % user, data=user_key_yaml)
 
     def create_master_key(self):
-        if os.path.exists(self.path + '/key'):
-            raise Exception('key exists. Cannot regenerate key')
-        print "Generating key"
         key_key = SymEncPasswordKey()
 
         key = SymEncKey()
@@ -150,42 +142,19 @@ class Ledger:
             'key_key': key_key.to_dict(),
             'key': key.to_dict(key_key)
         }
+
         key_yaml = yaml.dump(to_store, default_flow_style=False)
-        with open(self.path + '/key', 'w+') as key_file:
-            key_file.write(key_yaml)
-            self.dirty_files.append('key')
-        self.actions.append("Generated Master Key")
+        self.commit('key', "Generated Master Key", data=key_yaml)
         self.key = key
 
-    def auth_user(self, username):
-        if username not in self.users:
-            raise Exception("User %s doesn't exist" % username)
-        user = self.users[username]
-        user.decrypt_key()
-        self.current_user = user
-
-    @staticmethod
-    def new_id():
-        return str(uuid.uuid1())
-
-    def id_to_path(self, i):
-        id_parts = i.split('-')
-        # 0        1    2    3    4
-        # 3870ed38-29e1-11e3-be97-001de0794fc3
-        dir_path =  "tx/" + id_parts[4] + "/" + id_parts[3] + \
-                    "/" + id_parts[2]
-        file_name = id_parts[1] + "-" + id_parts[0]
-        return dir_path + "/" + file_name, dir_path
     def create_tx(self, from_account, to_account, description, amount):
         self.check_key()
 
         encor = SymEnc(self.key)
-        tx_id = Ledger.new_id()
         description = encor.encrypt(description)
         amount = encor.encrypt(str(amount))
 
         tx = {
-            'id': tx_id,
             'description': description.to_dict(),
             'amount': amount.to_dict(),
             'to_account': to_account,
@@ -193,57 +162,59 @@ class Ledger:
         }
 
         tx_yaml = yaml.dump(tx, default_flow_style = False)
-        fn,dirn = self.id_to_path(tx_id)
-        os.makedirs(self.path + "/" + dirn)
-        with open(self.path + "/" + fn, "w") as f:
-            f.write(tx_yaml)
-        self.dirty_files.append(fn)
-        self.actions.append('Added Tx ' + tx_id)
+        self.commit('txs',"Added Tx", data=tx_yaml)
 
-    def list_files(self, root = None):
-        fs = []
-        if root is None:
-            root = self.path
-        for root, subFolders, files in os.walk(root):
-            if -1 == root.find('.git'):
-                for folder in subFolders:
-                    fs = fs + self.list_files(folder)
-                for filename in files:
-                    filePath = os.path.join(root, filename)
-                    fs.append(filePath)
-        return fs
-    def list_tx(self, root = None):
-        txs = []
-        if root is None:
-            root = self.path + "/tx"
-        for root, subFolders, files in os.walk(root):
-            for folder in subFolders:
-                txs = txs + self.list_tx(folder)
-            for filename in files:
-                if filename != '.placeholder':
-                    filePath = os.path.join(root, filename)
-                    txs.append(self.read_tx_file(filePath))
-        return txs
-            
-    def read_tx_id(self, tx_id):
-        fn = self.id_to_path(tx_id)
-        return self.read_tx_file(fn)
-    def read_tx_file(self, tx_file):
+    def walk_branch(self, branch, verify = True):
+        branch = "refs/heads/%s" % branch
+        if branch not in self.repo.refs:
+             return
+        for tx in self.repo.get_walker(include=self.repo.refs[branch]):
+            a = tx.commit.message.split('\n', 2)
+            actions = a[0]
+            sig = a[1]
+            data = a[2]
+            actions = actions.split(':')[1].strip()
+            sig = sig.split(':')[1].strip()
+            s2s = Ledger.str_to_sign(ctime = tx.commit.commit_time, 
+                                     parent = ','.join(tx.commit.parents),
+                                     digest = hashlib.sha256(data).hexdigest(), 
+                                     actions = actions,
+                                     user = tx.commit.author)
+            if verify:
+                user = self.cached_users[tx.commit.author]
+                asc = ASymEnc(user.key)
+                if not asc.verify(s2s, sig):
+                    raise LedgerException("Commit %s has a bad sig" % tx.commit.id)
+            yield data
+    def keys(self): # There should only ever be 1, but...
+        for data in self.walk_branch('key'):
+            key = yaml.safe_load(data)
+            yield key    
+    def txs(self):
+        for data in self.walk_branch('txs'):
+            tx = yaml.safe_load(data)
+            yield tx
+    def users(self, verify = True):
+        for data in self.walk_branch('users', verify=verify):
+            data = yaml.safe_load(data)
+            user = User.from_dict_auth(data, decrypt = False)
+            yield user
+    def load_all_users(self):
+        users = {}
+        if self.cached_users is not None:
+            return None
+        for user in self.users(verify=False):
+            users[repr(user)] = user
+            users[str(user)] = user
+        self.cached_users = users
+    def balances(self):
+        accts = {}
         self.check_key()
         encor = SymEnc(self.key)
-        tx = None
-        with open(tx_file, 'r') as f:
-            tx = yaml.safe_load(f.read())
-        tx['description'] = encor.decrypt(EncResult.from_dict(tx['description']))
-        tx['amount'] = encor.decrypt(EncResult.from_dict(tx['amount']))
-        return tx
-    def balances(self):
-        txs = self.list_tx()
-        accts = {}
-        for tx in txs:
+        for tx in self.txs():
             from_account = tx['from_account']
             to_account = tx['to_account']
-            amount = int(tx['amount'])
+            amount = int(encor.decrypt(EncResult.from_dict(tx['amount'])))
             if from_account not in accts:
                 accts[from_account] = 0
             if to_account not in accts:
@@ -252,41 +223,15 @@ class Ledger:
             accts[to_account] += amount
         return accts
 
-    def load_all_users(self):
-        users = {}
-        for root, subFolders, files in os.walk(self.path + "/users"):
-            for filename in files:
-                filePath = os.path.join(root, filename)
-                user = None
-                with open(filePath, 'r') as f:
-                    user_dict = yaml.safe_load(f.read())
-                user = User.from_dict_auth(user_dict, decrypt = False)
-                users[repr(user)] = user
-                users[str(user)] = user
-        self.users = users
     def verify(self):
         return self.errors() is None
     def errors(self):
-        if 'refs/heads/master' not in self.repo.refs:
-            return None
-        for rev in self.repo.get_walker():
-            parent = ','.join(rev.commit.parents)
-            tid = rev.commit.tree
-            commiter = self.users[rev.commit.author]
-            ctime = rev.commit.commit_time
-            if 0 == len(parent):
-                parent = None
-    
-            msg = rev.commit.message
-            sig = msg[5 + msg.find('Sig: '):]
-            str_to_sign = "%d:%s:%s:%s" % (ctime, parent, tid, str(commiter))
-            ase = ASymEnc(commiter.key)
-            if not ase.verify(str_to_sign, sig):
-                return "Commit %s has an invalid signature" % rev.commit.id
-
-
-            for change in rev.changes():
-                if -1 != change.new.path.find('tx'):
-                    if change.type != 'add':
-                        return "Commit %s modifies a transaction"
+        try:
+            for tx in self.txs(): pass
+            for tx in self.users(): pass
+            for tx in self.keys(): pass
+        except LedgerException as e:
+            return str(e)
+        return None
+    def tx_for_account(self, account):
         return None
