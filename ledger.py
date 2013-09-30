@@ -7,7 +7,7 @@ import shutil
 import time
 import datetime
 from dateutil.tz import tzlocal
-
+import uuid
 from user import User
 
 # Man is this ugly
@@ -26,6 +26,7 @@ class Ledger:
         self.current_user = user
         self.dirty_files = []
         self.actions = []
+        self.key = None
 
     @staticmethod
     def init(path, user):
@@ -35,11 +36,14 @@ class Ledger:
         ledger.actions.append('Init')
         ledger.create_master_key()
         ledger.add_user(user)
+        ledger.init_tx_dir()
         ledger.commit()
         
     def commit(self):
         if self.current_user is None:
             raise Exception('No User Logged in')
+        if 0 == len(self.dirty_files):
+            return None;
         ase = ASymEnc(self.current_user.key)
 
         object_store = self.repo.object_store
@@ -84,6 +88,28 @@ class Ledger:
         self.dirty_files = []
         self.actions = []
 
+    def load_key(self):
+        key = None
+        with open(self.path + '/key', 'r') as key_file: 
+            key = yaml.safe_load(key_file.read())
+        key_key = key['key_key']
+        key_key = SymEncPasswordKey.from_dict(key_key)
+        key = key['key']
+        key = SymEncKey.from_dict(key_key, key)
+        self.key = key
+
+    def check_key(self):
+        if self.key is None:
+            raise Exception("Key not loaded")
+
+    def init_tx_dir(self):
+        if not os.path.exists(self.path + '/tx/'):
+            os.makedirs(self.path + '/tx/')
+        with open(self.path + '/tx/.placeholder', 'w') as f:
+            f.write('');
+        self.dirty_files.append('tx/.placeholder')
+        self.actions.append('Create Tx dir')
+
     def add_user(self, user):
         if not os.path.exists(self.path + '/users/'):
             os.makedirs(self.path + '/users/')
@@ -114,6 +140,7 @@ class Ledger:
             key_file.write(key_yaml)
             self.dirty_files.append('key')
         self.actions.append("Generated Master Key")
+
     def auth_user(self, username):
         if not os.path.exists(self.path + "/users/" + username):
             raise Exception("%s doesn't exist" % username)
@@ -121,3 +148,79 @@ class Ledger:
             user_dict = yaml.safe_load(f.read())
         user = User.from_dict_auth(user_dict)
         self.current_user = user
+
+    @staticmethod
+    def new_id():
+        return str(uuid.uuid1())
+
+    def id_to_path(self, i):
+        id_parts = i.split('-')
+        # 0        1    2    3    4
+        # 3870ed38-29e1-11e3-be97-001de0794fc3
+        dir_path =  "tx/" + id_parts[4] + "/" + id_parts[3] + \
+                    "/" + id_parts[2]
+        file_name = id_parts[1] + "-" + id_parts[2]
+        return dir_path + "/" + file_name, dir_path
+    def create_tx(self, from_account, to_account, description, amount):
+        self.check_key()
+
+        encor = SymEnc(self.key)
+        tx_id = Ledger.new_id()
+        description = encor.encrypt(description)
+        amount = encor.encrypt(str(amount))
+
+        tx = {
+            'id': tx_id,
+            'description': description.to_dict(),
+            'amount': amount.to_dict(),
+            'to_account': to_account,
+            'from_account': from_account,
+        }
+
+        tx_yaml = yaml.dump(tx, default_flow_style = False)
+        fn,dirn = self.id_to_path(tx_id)
+        os.makedirs(self.path + "/" + dirn)
+        with open(self.path + "/" + fn, "w") as f:
+            f.write(tx_yaml)
+        self.dirty_files.append(fn)
+        self.actions.append('Added Tx ' + tx_id)
+
+    def list_tx(self, root = None):
+        txs = []
+        if root is None:
+            root = self.path + "/tx"
+        for root, subFolders, files in os.walk(root):
+            for folder in subFolders:
+                txs = txs + self.list_tx(folder)
+            for filename in files:
+                if filename != '.placeholder':
+                    filePath = os.path.join(root, filename)
+                    txs.append(self.read_tx_file(filePath))
+        return txs
+            
+    def read_tx_id(self, tx_id):
+        fn = self.id_to_path(tx_id)
+        return self.read_tx_file(fn)
+    def read_tx_file(self, tx_file):
+        self.check_key()
+        encor = SymEnc(self.key)
+        tx = None
+        with open(tx_file, 'r') as f:
+            tx = yaml.safe_load(f.read())
+        tx['description'] = encor.decrypt(EncResult.from_dict(tx['description']))
+        tx['amount'] = encor.decrypt(EncResult.from_dict(tx['amount']))
+        return tx
+    def balances(self):
+        txs = self.list_tx()
+        accts = {}
+        for tx in txs:
+            from_account = tx['from_account']
+            to_account = tx['to_account']
+            amount = int(tx['amount'])
+            if from_account not in accts:
+                accts[from_account] = 0
+            if to_account not in accts:
+                accts[to_account] = 0
+            accts[from_account] -= amount
+            accts[to_account] += amount
+        return accts

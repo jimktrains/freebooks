@@ -27,16 +27,27 @@ if args.command == 'init':
     ledger = Ledger.init(args.ledger, user)
     
 else:
+    ledger = Ledger(args.ledger)
+    ledger.auth_user(args.user)
+    ledger.load_key()
     if args.command == 'add-user':
         if 2 > len(args.command_args):
             raise Exception("Must specifiy a user when initializing")
-
-        ledger = Ledger(args.ledger)
-        ledger.auth_user(args.user)
-
         user_to_add = User(
-            args.command_args[0], args.command_args[1], args.command_args[2])
+            args.command_args[0], # Username
+            args.command_args[1], # Full Name
+            args.command_args[2]) # Email
         user_to_add.generate_key()
         ledger.add_user(user_to_add)
-
-        ledger.commit()
+    elif args.command == "tx":
+        ledger.create_tx(
+            args.command_args[0], # to
+            args.command_args[1], # from
+            args.command_args[2], # desc
+            int(args.command_args[3]) #amt
+        )
+    elif args.command == "balances" or args.command == 'bal':
+        accts = ledger.balances()
+        for acct in accts:
+            print'%-6s | %6d' % (acct, accts[acct])
+    ledger.commit()

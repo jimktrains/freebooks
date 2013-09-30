@@ -1,6 +1,7 @@
 from Crypto.Cipher import AES
 from Crypto import Random
 from crypto.symenc import SymEnc
+from crypto.encresult import EncResult
 BLOCK_SIZE = 32
 class SymEncKey:
     def __init__(self, enc = None, hmac = None, algo = None, 
