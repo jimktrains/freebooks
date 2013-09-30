@@ -45,5 +45,6 @@ Now, let's move some money around and look at balances. (Note: account ids don't
 
     python freebooks.py -u jim -l test-ledger bal
 
-    1      |   -100
-    2      |    100
+    1      |    500
+    3      |   -200
+    2      |   -300
