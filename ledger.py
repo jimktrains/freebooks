@@ -185,17 +185,23 @@ class Ledger:
                 asc = ASymEnc(user.key)
                 if not asc.verify(s2s, sig):
                     raise LedgerException("Commit %s has a bad sig" % tx.commit.id)
-            yield data
+            yield data, tx.commit
     def keys(self): # There should only ever be 1, but...
-        for data in self.walk_branch('key'):
+        for data, commit in self.walk_branch('key'):
             key = yaml.safe_load(data)
             yield key    
     def txs(self):
-        for data in self.walk_branch('txs'):
+        self.check_key()
+        encor = SymEnc(self.key)
+        for data, commit in self.walk_branch('txs'):
             tx = yaml.safe_load(data)
+            tx['who'] = commit.author
+            tx['when'] = commit.commit_time
+            tx['amount'] = int(encor.decrypt(EncResult.from_dict(tx['amount'])))
+            tx['description'] = encor.decrypt(EncResult.from_dict(tx['description']))
             yield tx
     def users(self, verify = True):
-        for data in self.walk_branch('users', verify=verify):
+        for data, commit in self.walk_branch('users', verify=verify):
             data = yaml.safe_load(data)
             user = User.from_dict_auth(data, decrypt = False)
             yield user
@@ -210,11 +216,10 @@ class Ledger:
     def balances(self):
         accts = {}
         self.check_key()
-        encor = SymEnc(self.key)
         for tx in self.txs():
             from_account = tx['from_account']
             to_account = tx['to_account']
-            amount = int(encor.decrypt(EncResult.from_dict(tx['amount'])))
+            amount = tx['amount']
             if from_account not in accts:
                 accts[from_account] = 0
             if to_account not in accts:
@@ -233,5 +238,7 @@ class Ledger:
         except LedgerException as e:
             return str(e)
         return None
-    def tx_for_account(self, account):
-        return None
+    def txs_for_account(self, account):
+        for tx in self.txs():
+            if account == tx['to_account'] or account == tx['from_account']:
+                yield tx

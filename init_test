@@ -1,10 +1,19 @@
 rm -rf test-ledger
 python freebooks.py -l test-ledger init jim "Jim K" jim@example.com
 python freebooks.py -l test-ledger -u jim add-user you "You There" you@example.com
+echo "Move 100 from 1 to 2"
 python freebooks.py -u jim -l test-ledger tx 1 2 jim 100
 python freebooks.py -u jim -l test-ledger bal
-python freebooks.py -u jim -l test-ledger tx 2 1 jim 400
+echo "Move 400 from 2 to 1"
+python freebooks.py -u you -l test-ledger tx 2 1 jim 400
 python freebooks.py -u jim -l test-ledger bal
+echo "Move 200 from 3 to 1"
 python freebooks.py -u jim -l test-ledger tx 3 1 jim 200
 python freebooks.py -u jim -l test-ledger bal
+echo "Listing Account 1"
+python freebooks.py -u jim -l test-ledger ls 1
+echo "Listing Account 2"
+python freebooks.py -u jim -l test-ledger ls 2
+echo "Listing Account 3"
+python freebooks.py -u jim -l test-ledger ls 3
 

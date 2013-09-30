@@ -51,5 +51,10 @@ else:
             for acct in accts:
                 print'%-6s|%6d' % (acct, accts[acct])
         elif args.command == "list-tx" or args.command == 'ls':
-            txs = ledger.tx_for_account(args.command_args[0])
-            print txs
+            acct = args.command_args[0]
+            for tx in ledger.txs_for_account(acct):
+                if acct == tx['from_account']:
+                    tx['from_account'] = tx['to_account']
+                    tx['to_account'] = acct
+                    tx['amount'] = -tx['amount']
+                print'%30s|%-6s|%-6s|%-6s|%-6s|%6d' % (tx['who'], tx['when'], tx['from_account'], tx['to_account'], tx['description'],tx['amount'])
