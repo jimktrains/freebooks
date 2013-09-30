@@ -14,9 +14,11 @@ class ASymKey:
             self.public = key['public']
             self.private = key['private']
             self.curve = key['curve']
-        h = SHA256.new()
-        h.update(self.private)
-        self.hmac_key = h.digest()
+        self.hmac_key = None
+        if isinstance(self.private, str):
+            h = SHA256.new()
+            h.update(self.private)
+            self.hmac_key = h.digest()
 
     def to_dict(self, pickle_key):
         s = SymEnc(pickle_key)
@@ -27,14 +29,16 @@ class ASymKey:
             "curve": self.curve,
         }
 
+    # These ares should be reversed so that state is req
     @staticmethod
-    def from_dict(pickle_key, state):
-        s = SymEnc(pickle_key)
-
+    def from_dict(pickle_key = None, state = None):
         key = {
             "public": base64.b64decode(state['public']),
-            "private": s.decrypt(EncResult.from_dict(state['private'])),
+            "private": EncResult.from_dict(state['private']),
             "curve": state['curve'],
         }
+        if pickle_key is not None:
+            s = SymEnc(pickle_key)
+            key['private'] = s.decrypt(key['private'])
 
         return ASymKey(key)

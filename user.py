@@ -23,11 +23,18 @@ class User:
             'full_name': self.full_name,
             'email': self.email
         }
+    def decrypt_key(self):
+        self.password = SymEncPasswordKey.from_dict(self.password)
+        self.key = ASymKey.from_dict(self.password, self.raw_key)
+        
     @staticmethod
-    def from_dict_auth(state):
+    def from_dict_auth(state, decrypt = False):
         user = User(state['username'], state['full_name'], state['email'])
-        user.password = SymEncPasswordKey.from_dict(state['password'])
-        user.key = ASymKey.from_dict(user.password, state['key'])
+        user.password = state['password']
+        user.raw_key = state['key']
+        if decrypt:
+            user.decrypt_key()
+        user.key = ASymKey.from_dict(None, user.raw_key)
         return user 
     def __str__(self):
         return self.username

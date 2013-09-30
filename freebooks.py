@@ -27,29 +27,26 @@ if args.command == 'init':
     ledger = Ledger.init(args.ledger, user)
     
 else:
-    ledger = Ledger(args.ledger)
-    #ledger.verify()
-    #exit()
-    ledger.auth_user(args.user)
-    ledger.load_key()
-    if args.command == 'add-user':
-        if 2 > len(args.command_args):
-            raise Exception("Must specifiy a user when initializing")
-        user_to_add = User(
-            args.command_args[0], # Username
-            args.command_args[1], # Full Name
-            args.command_args[2]) # Email
-        user_to_add.generate_key()
-        ledger.add_user(user_to_add)
-    elif args.command == "tx":
-        ledger.create_tx(
-            args.command_args[0], # to
-            args.command_args[1], # from
-            args.command_args[2], # desc
-            int(args.command_args[3]) #amt
-        )
-    elif args.command == "balances" or args.command == 'bal':
-        accts = ledger.balances()
-        for acct in accts:
-            print'%-6s | %6d' % (acct, accts[acct])
-    ledger.commit()
+    with Ledger(args.ledger, args.user) as ledger:
+        if args.command == 'add-user':
+            if 2 > len(args.command_args):
+                raise Exception("Must specifiy a user when initializing")
+            user_to_add = User(
+                args.command_args[0], # Username
+                args.command_args[1], # Full Name
+                args.command_args[2]) # Email
+            user_to_add.generate_key()
+            ledger.add_user(user_to_add)
+        elif args.command == "tx":
+            ledger.create_tx(
+                args.command_args[0], # to
+                args.command_args[1], # from
+                args.command_args[2], # desc
+                int(args.command_args[3]) #amt
+            )
+        elif args.command == "balances" or args.command == 'bal':
+            accts = ledger.balances()
+            print'%-6s|%6s' % ("Account", "Balance")
+            print'%6s-+-%6s' % (6*'-', 6*'-')
+            for acct in accts:
+                print'%-6s|%6d' % (acct, accts[acct])

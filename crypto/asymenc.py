@@ -9,11 +9,18 @@ class ASymEnc:
         else:
             self.key = key
 
+        private = ''
+        self.no_private = True
+        if isinstance(self.key.private, str):
+            private = self.key.private
+            self.no_private = False
         self.ecc = ECC(public=self.key.public, 
-                       private=self.key.private, 
+                       private=private,
                        curve=self.key.curve)
 
     def encrypt(self, data):
+        if self.no_private:
+            raise Exception("Encryption requires a private key")
         encrypted = self.ecc.encrypt(data)
         encrypted = ASymEncData(self.key.curve, encrypted)
         encrypted = EncResult(encrypted, self.key.hmac_key)
@@ -26,6 +33,8 @@ class ASymEnc:
         else:
             raise Exception('HMAC invalid')
     def sign(self, data):
+        if self.no_private:
+            raise Exception("Signing requires a private key")
         signature = self.ecc.sign(data)
         return base64.b64encode(signature)
     def verify(self, data, signature):

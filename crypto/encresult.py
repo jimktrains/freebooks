@@ -31,8 +31,8 @@ class EncResult:
     @staticmethod
     def from_dict(state):
         # I don't like doing it like this
-        if 'iv' in state['data']:
+        if isinstance(state['data'], dict) and 'iv' in state['data']:
             state['data'] = SymEncData.from_dict(state['data'])
-        else:
+        elif isinstance(state['data'], dict) and 'curve' in state['data']:
             state['data'] = ASymEncData.from_dict(state['data'])
         return EncResult(state['data'], state['hmac'])

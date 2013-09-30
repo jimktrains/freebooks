@@ -1,0 +1,10 @@
+rm -rf test-ledger
+python freebooks.py -l test-ledger init jim "Jim K" jim@example.com
+python freebooks.py -l test-ledger -u jim add-user you "You There" you@example.com
+python freebooks.py -u jim -l test-ledger tx 1 2 jim 100
+python freebooks.py -u jim -l test-ledger bal
+python freebooks.py -u jim -l test-ledger tx 2 1 jim 400
+python freebooks.py -u jim -l test-ledger bal
+python freebooks.py -u jim -l test-ledger tx 3 1 jim 200
+python freebooks.py -u jim -l test-ledger bal
+

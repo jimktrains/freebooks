@@ -28,6 +28,20 @@ class Ledger:
         self.actions = []
         self.key = None
 
+    def __enter__(self):
+        self.load_all_users()
+        if isinstance(self.current_user, str):
+            self.auth_user(self.current_user)
+        errs = self.errors()
+        if errs:
+            raise Exception(errs)
+        self.load_key()
+        return self
+    def __exit__(self, type, value, traceback):
+        if value is None:
+            self.commit()
+            return True
+        return False
     @staticmethod
     def init(path, user):
         Repo.init(path, mkdir=True)
@@ -44,14 +58,14 @@ class Ledger:
             raise Exception('No User Logged in')
         if 0 == len(self.dirty_files):
             return None;
-        ase = ASymEnc(self.current_user.key)
+        files = self.list_files()
 
         object_store = self.repo.object_store
 
         t = Tree()
-        for fn in self.dirty_files:
+        for fn in files:
             b = None
-            with open(self.path + "/" + fn, 'r') as f:
+            with open(fn, 'r') as f:
                 b = Blob.from_string(f.read())
             t.add(fn, 0100644, b.id)
             object_store.add_object(b)
@@ -65,6 +79,7 @@ class Ledger:
         
         ctime = int(time.time())
         str_to_sign = "%d:%s:%s:%s" % (ctime, parent, t.sha().hexdigest(), str(self.current_user))
+        ase = ASymEnc(self.current_user.key)
         sig = ase.sign(str_to_sign)
 
         message = "Actions: %s\nSig: %s" % (actions, sig)
@@ -140,13 +155,13 @@ class Ledger:
             key_file.write(key_yaml)
             self.dirty_files.append('key')
         self.actions.append("Generated Master Key")
+        self.key = key
 
     def auth_user(self, username):
-        if not os.path.exists(self.path + "/users/" + username):
-            raise Exception("%s doesn't exist" % username)
-        with open(self.path + "/users/" + username, 'r') as f:
-            user_dict = yaml.safe_load(f.read())
-        user = User.from_dict_auth(user_dict)
+        if username not in self.users:
+            raise Exception("User %s doesn't exist" % username)
+        user = self.users[username]
+        user.decrypt_key()
         self.current_user = user
 
     @staticmethod
@@ -185,6 +200,18 @@ class Ledger:
         self.dirty_files.append(fn)
         self.actions.append('Added Tx ' + tx_id)
 
+    def list_files(self, root = None):
+        fs = []
+        if root is None:
+            root = self.path
+        for root, subFolders, files in os.walk(root):
+            if -1 == root.find('.git'):
+                for folder in subFolders:
+                    fs = fs + self.list_files(folder)
+                for filename in files:
+                    filePath = os.path.join(root, filename)
+                    fs.append(filePath)
+        return fs
     def list_tx(self, root = None):
         txs = []
         if root is None:
@@ -225,6 +252,41 @@ class Ledger:
             accts[to_account] += amount
         return accts
 
+    def load_all_users(self):
+        users = {}
+        for root, subFolders, files in os.walk(self.path + "/users"):
+            for filename in files:
+                filePath = os.path.join(root, filename)
+                user = None
+                with open(filePath, 'r') as f:
+                    user_dict = yaml.safe_load(f.read())
+                user = User.from_dict_auth(user_dict, decrypt = False)
+                users[repr(user)] = user
+                users[str(user)] = user
+        self.users = users
     def verify(self):
+        return self.errors() is None
+    def errors(self):
+        if 'refs/heads/master' not in self.repo.refs:
+            return None
         for rev in self.repo.get_walker():
-            print rev
+            parent = ','.join(rev.commit.parents)
+            tid = rev.commit.tree
+            commiter = self.users[rev.commit.author]
+            ctime = rev.commit.commit_time
+            if 0 == len(parent):
+                parent = None
+    
+            msg = rev.commit.message
+            sig = msg[5 + msg.find('Sig: '):]
+            str_to_sign = "%d:%s:%s:%s" % (ctime, parent, tid, str(commiter))
+            ase = ASymEnc(commiter.key)
+            if not ase.verify(str_to_sign, sig):
+                return "Commit %s has an invalid signature" % rev.commit.id
+
+
+            for change in rev.changes():
+                if -1 != change.new.path.find('tx'):
+                    if change.type != 'add':
+                        return "Commit %s modifies a transaction"
+        return None
