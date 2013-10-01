@@ -1,7 +1,7 @@
 freebooks
 =========
 
-Distributed Ledger utilizing git for synchronization.
+Distributed Ledger designed for groups of people known to each other (_e.g._ corporations, families, friends, communes, &c). It utilizing git for synchronization and storage as well as AES-256-CBC and ECC-p384 for encryption and signatures.
 
 All information is stored in 3 branches within git:
 
@@ -18,7 +18,9 @@ Data is stored and signed within the commit itself
 * Time - The commit time. Stored as part of the git commit normally
 * Parent - The commits' parents. Stored as part of the git commit normally
 
-Since data is stored with in the commits, batch processing programs (_e.g._: GUI or webservice) may find it benificial to cache data-to-read in a database.
+Since data is stored with in the commits, batch processing programs (_e.g._: GUI or web-service) may find it beneficial to cache data-to-read in a database.
+
+Also, since all data is stored in commits, it would be necessary to cause a SHA-1 conflict to have a merge conflict, as such merges simply just take divergent heads and make a parent with both to become a single branch again.
 
 Basic Ideas
 -----------
@@ -52,27 +54,48 @@ Now, let's move some money around and look at balances. (Note: account ids don't
     python freebooks.py -u jim -l test-ledger tx 1 2 jim 100
 
     python freebooks.py -u jim -l test-ledger bal
-
-    1      |   -100
-    2      |    100
+    Account|Balance
+    -------+-------
+    1     |  -100
+    2     |   100
 
     python freebooks.py -u jim -l test-ledger tx 2 1 jim 400
 
     python freebooks.py -u jim -l test-ledger bal
 
-    1      |    300
-    2      |   -300
-
+    Account|Balance
+    -------+-------
+    1     |   300
+    2     |  -300
     python freebooks.py -u you -l test-ledger tx 3 1 jim 200
 
     python freebooks.py -u jim -l test-ledger bal
 
-    1      |    500
-    3      |   -200
-    2      |   -300
+    Account|Balance
+    -------+-------
+    1     |   500
+    3     |  -200
+    2     |  -300
+
 
     python freebooks.py -u jim -l test-ledger ls 1
 
-          Jim K <jim@example.com>|1380584575|3     |1     |jim   |   200
-      You There <you@example.com>|1380584570|2     |1     |jim   |   400
-          Jim K <jim@example.com>|1380584567|2     |1     |jim   |  -100
+           Jim K <jim@example.com>|2013-10-01 13:38:35|3     |1     |jim   |   200
+       You There <you@example.com>|2013-10-01 13:38:31|2     |1     |jim   |   400
+           Jim K <jim@example.com>|2013-10-01 13:38:28|2     |1     |jim   |  -100
+
+ToDo
+----
+
+* Fetch from a remote
+* Merge fetched branches
+* Push to a remote
+* Account management
+ * Store account_id.account_id...... as the to/from_account in each tx
+ * Store account descriptions
+  * Name
+  * Description
+  * Account numbers
+  * Currency
+  * Unit
+
