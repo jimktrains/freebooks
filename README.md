@@ -1,7 +1,7 @@
 freebooks
 =========
 
-Distributed Ledger utilizing git for synchronization.
+Distributed Ledger designed for groups of people known to each other (_e.g._ corporations, families, friends, communes, &c). It utilizing git for synchronization and storage as well as AES-256-CBC and ECC-p384 for encryption and signatures.
 
 All information is stored in 3 branches within git:
 
