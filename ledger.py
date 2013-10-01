@@ -68,6 +68,8 @@ class Ledger:
     def commit(self, branch, actions, data=None, parent = None):
         if parent is None:
             parent = ''
+        if data is None:
+            data = ''
         if self.current_user is None:
             raise LedgerException('No User Logged in')
         branch = "refs/heads/%s" % branch
