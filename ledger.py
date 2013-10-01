@@ -191,6 +191,8 @@ class Ledger:
                 asc = ASymEnc(user.key)
                 if not asc.verify(s2s, sig):
                     raise LedgerException("Commit %s has a bad sig" % tx.commit.id)
+            if data is None and -1 != tx.commit.message.find('Merge'):
+                continue
             yield data, tx.commit
     def keys(self): # There should only ever be 1, but...
         for data, commit in self.walk_branch('key'):
