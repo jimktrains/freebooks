@@ -91,10 +91,11 @@ ToDo
 * Merge fetched branches
 * Push to a remote
 * Account management
-** Store account descriptions
-*** Name
-*** Description
-*** Account numbers
-*** Currency
-*** Unit
-** Store account_id.account_id...... as the to/from_account in each tx
+ * Store account_id.account_id...... as the to/from_account in each tx
+ * Store account descriptions
+  * Name
+  * Description
+  * Account numbers
+  * Currency
+  * Unit
+
