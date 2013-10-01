@@ -18,7 +18,9 @@ Data is stored and signed within the commit itself
 * Time - The commit time. Stored as part of the git commit normally
 * Parent - The commits' parents. Stored as part of the git commit normally
 
-Since data is stored with in the commits, batch processing programs (_e.g._: GUI or webservice) may find it benificial to cache data-to-read in a database.
+Since data is stored with in the commits, batch processing programs (_e.g._: GUI or web-service) may find it beneficial to cache data-to-read in a database.
+
+Also, since all data is stored in commits, it would be necessary to cause a SHA-1 conflict to have a merge conflict, as such merges simply just take divergent heads and make a parent with both to become a single branch again.
 
 Basic Ideas
 -----------
