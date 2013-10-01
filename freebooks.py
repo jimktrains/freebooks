@@ -1,6 +1,7 @@
 import os
 import argparse
 import shutil
+import datetime
 
 from user import User
 from ledger import Ledger
@@ -57,4 +58,5 @@ else:
                     tx['from_account'] = tx['to_account']
                     tx['to_account'] = acct
                     tx['amount'] = -tx['amount']
-                print'%30s|%-6s|%-6s|%-6s|%-6s|%6d' % (tx['who'], tx['when'], tx['from_account'], tx['to_account'], tx['description'],tx['amount'])
+                dt = datetime.datetime.fromtimestamp(tx['when']).strftime('%Y-%m-%d %H:%M:%S')
+                print'%30s|%-6s|%-6s|%-6s|%-6s|%6d' % (tx['who'], dt, tx['from_account'], tx['to_account'], tx['description'],tx['amount'])

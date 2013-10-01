@@ -33,6 +33,7 @@ class Ledger:
         self.actions = []
         self.key = None
         self.cached_users = None
+        self.cached_txs = None
 
     def __enter__(self):
         self.load_all_users()
@@ -192,14 +193,20 @@ class Ledger:
             yield key    
     def txs(self):
         self.check_key()
-        encor = SymEnc(self.key)
-        for data, commit in self.walk_branch('txs'):
-            tx = yaml.safe_load(data)
-            tx['who'] = commit.author
-            tx['when'] = commit.commit_time
-            tx['amount'] = int(encor.decrypt(EncResult.from_dict(tx['amount'])))
-            tx['description'] = encor.decrypt(EncResult.from_dict(tx['description']))
-            yield tx
+        if self.cached_txs is not None:
+            for tx in self.cached_txs:
+                yield tx
+        else:
+            self.cached_txs = []
+            encor = SymEnc(self.key)
+            for data, commit in self.walk_branch('txs'):
+                tx = yaml.safe_load(data)
+                tx['who'] = commit.author
+                tx['when'] = commit.commit_time
+                tx['amount'] = int(encor.decrypt(EncResult.from_dict(tx['amount'])))
+                tx['description'] = encor.decrypt(EncResult.from_dict(tx['description']))
+                self.cached_txs.append(tx)
+                yield tx
     def users(self, verify = True):
         for data, commit in self.walk_branch('users', verify=verify):
             data = yaml.safe_load(data)
