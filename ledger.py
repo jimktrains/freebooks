@@ -1,5 +1,6 @@
 from dulwich.repo import *
 from dulwich.objects import *
+from dulwich.client import TCPGitClient
 import yaml
 import os
 import argparse
@@ -249,3 +250,8 @@ class Ledger:
         for tx in self.txs():
             if account == tx['to_account'] or account == tx['from_account']:
                 yield tx
+    def pull(self, host, port):
+        print host, port
+        client = TCPGitClient(host, port)
+        remote_refs = client.fetch("/", self.repo)
+        print "RR", remote_refs

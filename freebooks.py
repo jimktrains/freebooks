@@ -60,3 +60,5 @@ else:
                     tx['amount'] = -tx['amount']
                 dt = datetime.datetime.fromtimestamp(tx['when']).strftime('%Y-%m-%d %H:%M:%S')
                 print'%30s|%-6s|%-6s|%-6s|%-6s|%6d' % (tx['who'], dt, tx['from_account'], tx['to_account'], tx['description'],tx['amount'])
+        elif args.command == "pull":
+           ledger.pull(args.command_args[0], int(args.command_args[1])) 
