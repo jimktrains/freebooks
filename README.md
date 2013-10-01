@@ -78,3 +78,19 @@ Now, let's move some money around and look at balances. (Note: account ids don't
           Jim K <jim@example.com>|1380584575|3     |1     |jim   |   200
       You There <you@example.com>|1380584570|2     |1     |jim   |   400
           Jim K <jim@example.com>|1380584567|2     |1     |jim   |  -100
+
+
+ToDo
+----
+
+* Fetch from a remote
+* Merge fetched branches
+* Push to a remote
+* Account management
+** Store account descriptions
+*** Name
+*** Description
+*** Account numbers
+*** Currency
+*** Unit
+** Store account_id.account_id...... as the to/from_account in each tx
