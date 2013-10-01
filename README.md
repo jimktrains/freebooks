@@ -84,12 +84,27 @@ Now, let's move some money around and look at balances. (Note: account ids don't
        You There <you@example.com>|2013-10-01 13:38:31|2     |1     |jim   |   400
            Jim K <jim@example.com>|2013-10-01 13:38:28|2     |1     |jim   |  -100
 
+For Fun
+-------
+
+cd to `test-ledger` and do
+
+    git branch -a
+    git co key
+    git log
+    git co users
+    git log
+    git co txs
+    git log
+
+To get a feel for how things are being stored
+
 ToDo
 ----
 
-* Fetch from a remote
-* Merge fetched branches
-* Push to a remote
+* Fetch from a remote (multi branch for dev)
+* Merge fetched branches (multi branch for dev)
+* Push to a remote (multi branch for dev)
 * Account management
  * Store account_id.account_id...... as the to/from_account in each tx
  * Store account descriptions
