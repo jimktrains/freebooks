@@ -65,15 +65,19 @@ class Ledger:
             parent = ",".join(parent)
         action_digest =  hashlib.sha256(actions).hexdigest()
         return "%d:%s:%s:%s:%s" % (ctime, parent, digest, action_digest, user)
-    def commit(self, branch, actions, data=None):
+    def commit(self, branch, actions, data=None, parent = None):
+        if parent is None:
+            parent = ''
         if self.current_user is None:
             raise LedgerException('No User Logged in')
         branch = "refs/heads/%s" % branch
-        parent = ''
-        if branch in self.repo.refs:
+        if branch in self.repo.refs and parent == '':
             parent = [self.repo.refs[branch]]
 
-        digest = hashlib.sha256(data).hexdigest()
+        # cat /dev/null | openssl sha
+        digest = "da39a3ee5e6b4b0d3255bfef95601890afd80709"
+        if data is not None:
+            digest = hashlib.sha256(data).hexdigest()
         ctime = int(time.time())
         if isinstance(actions, list):
             actions = ". ".join(actions)
@@ -254,4 +258,10 @@ class Ledger:
         print host, port
         client = TCPGitClient(host, port)
         remote_refs = client.fetch("/", self.repo)
-        print "RR", remote_refs
+        for ref in remote_refs:
+            if -1 != ref.find('refs/heads/') and -1 == ref.find('master'):
+                branch = ref[11:]
+                parents =[ remote_refs[ref] ]
+                if ref in self.repo.refs:
+                    parents.append(self.repo.refs[ref])
+                self.commit(branch, "Merge", parent = parents)
