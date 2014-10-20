@@ -1,7 +1,7 @@
 freebooks
 =========
 
-Distributed Ledger designed for groups of people known to each other (_e.g._ corporations, families, friends, communes, &c). It utilizing git for synchronization and storage as well as AES-256-CBC and ECC-p384 for encryption and signatures.
+Distributed Ledger designed for groups of people known to each other (_e.g._ corporations, families, friends, communes, &c). It utilizes git for synchronization and storage as well as AES-256-CBC and ECC-p384 for encryption and signatures.
 
 All information is stored in 3 branches within git:
 
@@ -18,7 +18,7 @@ Data is stored and signed within the commit itself
 * Time - The commit time. Stored as part of the git commit normally
 * Parent - The commits' parents. Stored as part of the git commit normally
 
-Since data is stored with in the commits, batch processing programs (_e.g._: GUI or web-service) may find it beneficial to cache data-to-read in a database.
+Since data is stored within the commits, batch processing programs (_e.g._: GUI or web-service) may find it beneficial to cache data-to-read in a database.
 
 Also, since all data is stored in commits, it would be necessary to cause a SHA-1 conflict to have a merge conflict, as such merges simply just take divergent heads and make a parent with both to become a single branch again.
 
